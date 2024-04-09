@@ -60,16 +60,6 @@ class Recipe(db.Model, SerializerMixin):
             raise AssertionError("Title must be a string")
         return title
 
-    # def to_ordered_dict(self):
-    #     data = self.to_dict()
-    #     ordered_data = {
-    #         "id": data["id"],
-    #         "user": {"id": data["user_id"]},
-    #         "title": data["title"],
-    #         "instructions": data["instructions"],
-    #         "minutes_to_complete": data["minutes_to_complete"],
-    #     }
-    #     return ordered_data
     # @validates("instructions")
     # def validate_instructions(self, _, instructions):
     #     if not isinstance(instructions, str):

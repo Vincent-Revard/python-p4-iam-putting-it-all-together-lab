@@ -100,11 +100,35 @@ def get_all_by_condition(model, condition):
 #! before request - verify session login
 @app.before_request
 def load_logged_in_user():
+    # user_id = session.get("user_id")
+    # if user_id is None:
+    #     g.user = None
+    # else:
+    #     g.user = get_instance_by_id(User, user_id)
+
+    path_dict = {"userbyid": User, "recipebyid": Recipe}
+
+    # If the current request's endpoint is in the dictionary
+    if request.endpoint in path_dict:
+        # Get the ID from the request's view arguments
+        id = request.view_args.get("id")
+
+        # Get the record from the database
+        record = db.session.get(path_dict.get(request.endpoint), id)
+
+        # Determine the attribute name to set on `g`
+        key_name = request.endpoint.replace("byid", "")
+
+        # Set the attribute on `g`
+        setattr(g, key_name, record)
+
+    # If the user is logged in
     user_id = session.get("user_id")
-    if user_id is None:
-        g.user = None
-    else:
+    if user_id is not None:
+        # Get the user from the database and set it on `g`
         g.user = get_instance_by_id(User, user_id)
+    else:
+        g.user = None
 
 # Base class for CRUD resource classes
 class BaseResource(Resource):
@@ -231,7 +255,7 @@ class Login(Resource):
         data = request.get_json(force=True)
         if not data or not data.get("username") or not data.get("password"):
             return {"message": "Missing 'username' or 'password' in request data"}, 400
-        data = self.schema.load(data)  # Use the schema here
+        data = self.schema.load(data) 
         username = data.get("username")
         password = data.get("password")
         user = get_one_by_condition(User, User.username == username)
@@ -265,6 +289,16 @@ class RecipeIndex(BaseResource):
         if g.user is None:
             return {"message": "Unauthorized"}, 401
         return super().post()
+    
+    def delete(self, id):
+        if g.user is None:
+            return {"message": "Unauthorized"}, 401
+        return super().delete(id)
+
+    def patch(self, id):
+        if g.user is None:
+            return {"message": "Unauthorized"}, 401
+        return super().patch(id)
 
 
 api.add_resource(Signup, "/signup", endpoint="signup")
