@@ -230,7 +230,7 @@ class TestRecipeIndex:
         '''returns a list of recipes associated with the logged in user and a 200 status code.'''
 
         with app.app_context():
-            
+
             Recipe.query.delete()
             User.query.delete()
             db.session.commit()
@@ -250,7 +250,7 @@ class TestRecipeIndex:
             recipes = []
             for i in range(15):
                 instructions = fake.paragraph(nb_sentences=8)
-                
+
                 recipe = Recipe(
                     title=fake.sentence(),
                     instructions=instructions,
@@ -273,7 +273,6 @@ class TestRecipeIndex:
                 'password': 'secret',
             })
 
-        
             response = client.get('/recipes')
             response_json = response.get_json()
 
@@ -284,9 +283,9 @@ class TestRecipeIndex:
                 assert response_json[i]['minutes_to_complete']
 
     def test_get_route_returns_401_when_not_logged_in(self):
-        
+
         with app.app_context():
-            
+
             Recipe.query.delete()
             User.query.delete()
             db.session.commit()
@@ -295,18 +294,18 @@ class TestRecipeIndex:
         with app.test_client() as client:
 
             with client.session_transaction() as session:
-                
+
                 session['user_id'] = None
 
             response = client.get('/recipes')
-            
+
             assert response.status_code == 401
 
     def test_creates_recipes_with_201(self):
         '''returns a list of recipes associated with the logged in user and a 200 status code.'''
 
         with app.app_context():
-            
+
             Recipe.query.delete()
             User.query.delete()
             db.session.commit()
@@ -319,7 +318,7 @@ class TestRecipeIndex:
                 image_url=fake.url(),
             )
             user.password_hash = 'secret'
-            
+
             db.session.add(user)
             db.session.commit()
 
@@ -330,7 +329,7 @@ class TestRecipeIndex:
                 'username': 'Slagathor',
                 'password': 'secret',
             })
-            
+
             response = client.post('/recipes', json={
                 'title': fake.sentence(),
                 'instructions': fake.paragraph(nb_sentences=8),
@@ -340,9 +339,9 @@ class TestRecipeIndex:
             assert response.status_code == 201
 
             response_json = response.get_json()
-            
+
             with client.session_transaction() as session:
-                
+
                 new_recipe = Recipe.query.filter(Recipe.user_id == session['user_id']).first()
 
             assert response_json['title'] == new_recipe.title
@@ -351,7 +350,7 @@ class TestRecipeIndex:
 
     def test_returns_422_for_invalid_recipes(self):
         with app.app_context():
-            
+
             Recipe.query.delete()
             User.query.delete()
             db.session.commit()
@@ -364,7 +363,6 @@ class TestRecipeIndex:
                 image_url=fake.url(),
             )
             user.password_hash = 'secret'
-            
 
             db.session.add(user)
             db.session.commit()
@@ -376,13 +374,15 @@ class TestRecipeIndex:
                 'username': 'Slagathor',
                 'password': 'secret',
             })
-            
+
             fake = Faker()
 
-            response = client.post('/recipes', json={
-                'title': fake.sentence(),
-                'instructions': 'figure it out yourself!',
-                'minutes_to_complete': randint(15,90)
-            })
+            response = client.post(
+                "/recipes",
+                json={
+                    "instructions": fake.paragraph(nb_sentences=5),
+                    "minutes_to_complete": randint(15, 90),
+                },
+            )
 
             assert response.status_code == 422

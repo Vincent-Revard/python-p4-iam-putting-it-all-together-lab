@@ -56,6 +56,12 @@ class Recipe(db.Model, SerializerMixin):
 
     user = db.relationship("User", back_populates="recipes")
 
+    @validates("title")
+    def validate_title(self, key, title):
+        if not isinstance(title, str):
+            raise AssertionError("Title must be a string")
+        return title
+
     # def to_ordered_dict(self):
     #     data = self.to_dict()
     #     ordered_data = {
