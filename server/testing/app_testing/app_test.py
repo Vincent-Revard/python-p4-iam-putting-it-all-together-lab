@@ -377,12 +377,10 @@ class TestRecipeIndex:
 
             fake = Faker()
 
-            response = client.post(
-                "/recipes",
-                json={
-                    "instructions": fake.paragraph(nb_sentences=5),
-                    "minutes_to_complete": randint(15, 90),
-                },
-            )
+            response = client.post('/recipes', json={
+                'title': fake.sentence(),
+                'instructions': 'figure it out yourself!',
+                'minutes_to_complete': randint(15,90)
+            })
 
             assert response.status_code == 422

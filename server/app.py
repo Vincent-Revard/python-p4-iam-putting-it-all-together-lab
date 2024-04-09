@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
-from flask import request, session
+from flask import request, session, g
 from flask_restful import Resource
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from werkzeug.exceptions import NotFound
 from marshmallow import Schema, fields, validates, ValidationError, pre_load
 from marshmallow.validate import Length
-
+import ipdb
 
 from config import app, db, api
 from models import User, Recipe
@@ -16,26 +16,51 @@ from models import User, Recipe
 #! Schema's Marshmallow
 class UserSchema(Schema):
     id = fields.Int(dump_only=True)
-    username = fields.Str(required=True)
-    password = fields.Str(load_only=True, required=True)
-    bio = fields.Str()
-    image_url = fields.Str()
+    username = fields.Str(
+        required=True, validate=Length(min=1), metadata={"description": "The unique username of the user"}
+    )
+    password = fields.Str(
+        load_only=True,
+        required=True,
+        metadata={"description": "The password of the user"},
+    )
+    bio = fields.Str(metadata={"description": "The biography of the user"})
+    image_url = fields.Str(metadata={"description": "The URL of the user's image"})
 
     @validates("username")
     def validate_username(self, username):
         if len(username) < 2:
             raise ValidationError("Username must contain at least two characters")
 
+    @pre_load
+    def strip_strings(self, data, **kwargs):
+        extra_data = kwargs.get('extra_data')
+        print(f"Extra data: {extra_data}")
+        #! example use of kwags:
+        #! user_schema.load(data, extra_data="extra")
+        #! can do something with this like logging or tracking things
+        for key, value in data.items():
+            if isinstance(value, str):
+                data[key] = value.strip()
+        return data
+
 class RecipeSchema(Schema):
     id = fields.Int(dump_only=True)
-    title = fields.Str(required=True)
+    title = fields.Str(
+        required=True, metadata={"description": "The title of the recipe"}
+    )
     instructions = fields.Str(
         required=True,
-        validate=Length(
-            min=10, error="Instructions must be at least 10 characters long"
-        ),
+        validate=Length(min=50, error="Instructions must be at least 50 characters long"),
+        metadata={"description": "The instructions for the recipe"},
     )
-    minutes_to_complete = fields.Int(required=True)
+    minutes_to_complete = fields.Int(
+        required=True,
+        metadata={"description": "The time it takes to complete the recipe"},
+    )
+    user_id = fields.Int(
+        metadata={"description": "The ID of the user who created the recipe"}
+    )
 
     @validates('title')
     def validate_title(self, title):
@@ -46,34 +71,45 @@ class RecipeSchema(Schema):
                 raise ValidationError('A recipe with this title already exists.')
 
 #! helpers
-def get_all(model, only=None):
-    instances = db.session.execute(select(model)).scalars().all()
-    if only is None:
-        return [instance.to_ordered_dict() for instance in instances]
-    else:
-        return [instance.to_dict(only=only) for instance in instances]
-
+def get_all(model):
+    # instances = db.session.execute(select(model)).scalars().all()
+    # if only is None:
+    #     return [instance.to_ordered_dict() for instance in instances]
+    # else:
+    #     return [instance.to_dict(only=only) for instance in instances]
+    return db.session.execute(select(model)).scalars().all()
 
 def get_instance_by_id(model, id):
-    if (instance := db.session.get(model, id)) is None:
-        raise NotFound(description=f"{model.__name__} not found")
-    return instance
-
+    # if (instance := db.session.get(model, id)) is None:
+    #     raise NotFound(description=f"{model.__name__} not found")
+    # return instance
+    return db.session.get(model, id)
 
 def get_one_by_condition(model, condition):
-    stmt = select(model).where(condition)
-    result = db.session.execute(stmt)
-    return result.scalars().first()
+    # stmt = select(model).where(condition)
+    # result = db.session.execute(stmt)
+    # return result.scalars().first()
+    return db.session.execute(select(model).where(condition)).scalars().first()
 
 def get_all_by_condition(model, condition):
-    stmt = select(model).where(condition)
-    result = db.session.execute(stmt)
-    return result.scalars().all()
+    # stmt = select(model).where(condition)
+    # result = db.session.execute(stmt)
+    # return result.scalars().all()
+    return db.session.execute(select(model).where(condition)).scalars().all()
+
+#! before request - verify session login
+@app.before_request
+def load_logged_in_user():
+    user_id = session.get("user_id")
+    if user_id is None:
+        g.user = None
+    else:
+        g.user = get_instance_by_id(User, user_id)
 
 # Base class for CRUD resource classes
 class BaseResource(Resource):
     model = None
-    schema = None  # Add a schema attribute
+    schema = None
 
     def get(self, id=None, condition=None):
         try:
@@ -91,6 +127,8 @@ class BaseResource(Resource):
                 )  # Use the schema to serialize the instances
             else:
                 instance = get_instance_by_id(self.model, id)
+                if instance is None:
+                    return {"errors": f"{self.model.__name__} not found"}, 404
                 return (
                     self.schema.dump(instance),
                     200,
@@ -109,14 +147,10 @@ class BaseResource(Resource):
             db.session.rollback()
             return {"errors": str(e)}, 500
 
-    def post(self, data=None):
-        if data is None:
-            data = request.json
+    def post(self):
         try:
-            data = request.get_json(force=True)
-            data = self.schema.load(
-                data
-            )  # Use the schema to deserialize the request data
+            data = request.get_json()
+            instance = self.schema.load(data)  # Use the schema to deserialize the request data via load
             instance = self.model(**data)
             db.session.add(instance)
             db.session.commit()
@@ -155,26 +189,6 @@ class Signup(Resource):
     model = User
     schema = UserSchema()
 
-    # def post(self):
-    #     data = request.get_json(force=True)
-    #     if not data or not data.get("username") or not data.get("password"):
-    #         return {"message": "Missing 'username' or 'password' in request data"}, 422
-    #     username = data.get("username")
-    #     password = data.get("password")
-    #     bio = data.get("bio", None)
-    #     image_url = data.get("image_url", None)
-    #     if get_one_by_condition(User, User.username == username) is not None:
-    #         return {"message": "User already exists"}, 422
-    #     user = User(username=username, bio=bio, image_url=image_url)
-    #     user.password_hash = password
-    #     db.session.add(user)
-    #     db.session.commit()
-    #     return {
-    #         "id": user.id,
-    #         "username": user.username,
-    #         "bio": user.bio,
-    #         "image_url": user.image_url,
-    #     }, 201
     def post(self):
         data = request.get_json(force=True)
         if not data or "username" not in data or "password" not in data:
@@ -187,8 +201,12 @@ class Signup(Resource):
         user.password_hash = password
         db.session.add(user)
         db.session.commit()
-        return self.schema.dump(user), 201
+        # Log the user in
+        session["user_id"] = user.id
+        session["username"] = user.username
+        g.user = user
 
+        return self.schema.dump(user), 201
 
 class CheckSession(Resource):
 
@@ -205,14 +223,15 @@ class CheckSession(Resource):
             "image_url": user.image_url,
         }, 200
 
-
 class Login(Resource):
     model = User
+    schema = UserSchema()
 
     def post(self):
         data = request.get_json(force=True)
         if not data or not data.get("username") or not data.get("password"):
             return {"message": "Missing 'username' or 'password' in request data"}, 400
+        data = self.schema.load(data)  # Use the schema here
         username = data.get("username")
         password = data.get("password")
         user = get_one_by_condition(User, User.username == username)
@@ -220,8 +239,8 @@ class Login(Resource):
             return {"message": "Invalid credentials"}, 401
         session["user_id"] = user.id
         session["username"] = user.username
+        g.user = user
         return {"id": user.id, "username": user.username}, 200
-
 
 class Logout(Resource):
     def delete(self):
@@ -231,45 +250,21 @@ class Logout(Resource):
         session["username"] = None
         return {}, 204
 
-
 class RecipeIndex(BaseResource):
     model = Recipe
-    # fields = ["id", "title", "instructions", "minutes_to_complete"]
     schema = RecipeSchema()
 
     def get(self):
-        # try:
-        if (user_id := session.get("user_id")) is None:
+        # if (user_id := session.get("user_id")) is None:
+        if g.user is None:
             return {"message": "Unauthorized"}, 401
-        return super().get(condition=Recipe.user_id == user_id)
-        # recipes = super().get(condition=Recipe.user_id == user_id)
-        # recipes_dict = self.schema.dump(recipes, many=True)
-        # if not recipes_dict:
-        #     return {"recipes": []}, 200
-        # return {"recipes": recipes_dict}, 200
+        return super().get(condition=Recipe.user_id == g.user.id)
 
-    #     user_recipes = (
-    #         db.session.execute(select(Recipe).where(Recipe.user_id == user_id)).scalars().all()
-    #     )
-    #     if not user_recipes:
-    #         return {"recipes": []}, 200
-    #     return [recipe.to_dict() for recipe in user_recipes], 200
-    # except ValueError as e:
-    #     return {"message": str(e)}, 422
-    def post(self, data=None):
-        if (user_id := session.get("user_id")) is None:
+    def post(self):
+        # if (_ := session.get("user_id")) is None:
+        if g.user is None:
             return {"message": "Unauthorized"}, 401
-        
-        if data is None:
-            try:
-                data = self.schema.load(request.json)
-            except ValidationError as err:
-                return {"message": str(err)}, 422
-
-        # Add the user_id to the data
-        data["user_id"] = user_id
-
-        return super().post(data=data)
+        return super().post()
 
 
 api.add_resource(Signup, "/signup", endpoint="signup")

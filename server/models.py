@@ -40,7 +40,6 @@ def get_default_user_id():
     result = db.session.execute(text("SELECT id FROM users LIMIT 1")).first()
     return result[0] if result else None
 
-
 class Recipe(db.Model, SerializerMixin):
     __tablename__ = "recipes"
 
@@ -52,7 +51,6 @@ class Recipe(db.Model, SerializerMixin):
     title = db.Column(db.String, nullable=False)
     instructions = db.Column(db.String, nullable=False)
     minutes_to_complete = db.Column(db.Integer)
-
 
     user = db.relationship("User", back_populates="recipes")
 
