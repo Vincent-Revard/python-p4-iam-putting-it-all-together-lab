@@ -4,14 +4,11 @@ from flask import request, session, g
 from flask_restful import Resource
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy import select
-from werkzeug.exceptions import NotFound
 from marshmallow import Schema, fields, validates, ValidationError, pre_load
 from marshmallow.validate import Length
-import ipdb
 
 from config import app, db, api
 from models import User, Recipe
-
 
 #! Schema's Marshmallow
 class UserSchema(Schema):
@@ -70,32 +67,29 @@ class RecipeSchema(Schema):
             if existing_recipe is not None:
                 raise ValidationError('A recipe with this title already exists.')
 
+
 #! helpers
+def execute_query(query):
+    return db.session.execute(query).scalars()
+
 def get_all(model):
-    # instances = db.session.execute(select(model)).scalars().all()
-    # if only is None:
-    #     return [instance.to_ordered_dict() for instance in instances]
-    # else:
-    #     return [instance.to_dict(only=only) for instance in instances]
-    return db.session.execute(select(model)).scalars().all()
+    # return db.session.execute(select(model)).scalars().all()
+    return execute_query(select(model)).all()
 
 def get_instance_by_id(model, id):
-    # if (instance := db.session.get(model, id)) is None:
-    #     raise NotFound(description=f"{model.__name__} not found")
-    # return instance
     return db.session.get(model, id)
 
 def get_one_by_condition(model, condition):
     # stmt = select(model).where(condition)
     # result = db.session.execute(stmt)
     # return result.scalars().first()
-    return db.session.execute(select(model).where(condition)).scalars().first()
+    return execute_query(select(model).where(condition)).first()
 
 def get_all_by_condition(model, condition):
     # stmt = select(model).where(condition)
     # result = db.session.execute(stmt)
     # return result.scalars().all()
-    return db.session.execute(select(model).where(condition)).scalars().all()
+    return execute_query(select(model).where(condition)).all()
 
 #! before request - verify session login
 @app.before_request
@@ -173,8 +167,9 @@ class BaseResource(Resource):
 
     def post(self):
         try:
-            data = request.get_json()
-            instance = self.schema.load(data)  # Use the schema to deserialize the request data via load
+            data = self.schema.load(
+                request.json
+            )  # Use the schema to deserialize the request data via load
             instance = self.model(**data)
             db.session.add(instance)
             db.session.commit()
@@ -190,7 +185,7 @@ class BaseResource(Resource):
 
     def patch(self, id):
         try:
-            data = request.get_json(force=True)
+            data = request.json
             data = self.schema.load(
                 data
             )  # Use the schema to deserialize the request data
@@ -208,13 +203,12 @@ class BaseResource(Resource):
             db.session.rollback()
             return {"message": "Invalid data"}, 422
 
-
 class Signup(Resource):
     model = User
     schema = UserSchema()
 
     def post(self):
-        data = request.get_json(force=True)
+        data = request.json
         if not data or "username" not in data or "password" not in data:
             return {"message": "Missing 'username' or 'password' in request data"}, 422
         data = self.schema.load(data)
@@ -231,7 +225,6 @@ class Signup(Resource):
         g.user = user
 
         return self.schema.dump(user), 201
-
 class CheckSession(Resource):
 
     def get(self):
@@ -252,7 +245,7 @@ class Login(Resource):
     schema = UserSchema()
 
     def post(self):
-        data = request.get_json(force=True)
+        data = request.json
         if not data or not data.get("username") or not data.get("password"):
             return {"message": "Missing 'username' or 'password' in request data"}, 400
         data = self.schema.load(data) 

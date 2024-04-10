@@ -4,7 +4,6 @@ from sqlalchemy.orm import validates
 from sqlalchemy.sql.expression import text
 from sqlalchemy import CheckConstraint
 
-
 from config import db, bcrypt
 
 class User(db.Model, SerializerMixin):
